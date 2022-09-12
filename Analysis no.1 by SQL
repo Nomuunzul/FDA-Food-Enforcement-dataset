@@ -1,0 +1,204 @@
+ 
+ -- "DATA EXPLORATION SECTION" --
+
+
+
+
+SELECT
+  COUNT(event_id),
+FROM
+  bigquery-public-data.fda_food.food_enforcement;
+SELECT
+  COUNT(DISTINCT event_id),
+FROM
+  bigquery-public-data.fda_food.food_enforcement; 
+-- Total OF 21,525 recalled cases FOR unique products and  5531 batch OF cases grouped BY similar incidents IN the dataset OF food_enforcement.
+
+SELECT
+  MIN(report_date) AS earlist_date,
+  MAX(report_date) AS latest_date
+FROM
+  bigquery-public-data.fda_food.food_enforcement; 
+-- Report_date IS ranges BETWEEN 20 Jun 2012 TO 8 Dec 2021
+
+SELECT
+  COUNT(DISTINCT report_number),
+FROM
+  bigquery-public-data.fda_food.food_events; 
+-- Total OF 91776 ROWS IN the dataset OF food_events.
+
+SELECT AVG(n_cases) avg_cases, 
+    MAX(n_cases) max_cases,
+    MIN(n_cases) min_cases
+FROM
+  (WITH table_with_year AS
+    (SELECT classification, 
+    EXTRACT ( YEAR FROM report_date) AS year
+    FROM
+    bigquery-public-data.fda_food.food_enforcement) 
+  SELECT year, COUNT(classification) AS n_cases  
+  FROM table_with_year AS sum_df
+  GROUP BY year)
+-- Average recall cases per year is 2,152. Max number for recall cases are 3,203 and min is 1,088.
+
+SELECT
+  MIN(date_created) AS earlist_date,
+  MAX(date_created) AS latest_date
+FROM
+  bigquery-public-data.fda_food.food_events; 
+-- Report_date IS ranges BETWEEN 01 Jan 2004 TO 31 Mar 2020 
+
+SELECT AVG(n_reports) avg_cases, 
+    MAX(n_reports) max_cases,
+    MIN(n_reports) min_cases
+FROM
+  (WITH rtable_with_year AS
+    (SELECT report_number, 
+    EXTRACT ( YEAR FROM date_created) AS year
+    FROM
+    bigquery-public-data.fda_food.food_events) 
+  SELECT year, COUNT(report_number) AS n_reports  
+  FROM rtable_with_year AS sum_df
+  GROUP BY year)
+--FDA receives average of 5,398 reports per year from individuals on food health hazards. And max is 10,798 and min is 1,788.
+--Unfortunately, those two datasets doesnt have any unique values to be joined, hence further analysis i decided focus fda_enforcement dataset as it provides sources of food hazars. 
+
+
+
+
+-- "SUMMARY STATS SECTION" --
+
+
+
+
+SELECT
+  COUNT(classification),
+  classification
+FROM
+  bigquery-public-data.fda_food.food_enforcement
+GROUP BY
+  classification
+ORDER BY
+  2; 
+-- Total reported cases are 9178, 11142 and 1205 for Class I, II and III respectively.
+
+SELECT voluntary_mandated, recalling_firm, COUNT(voluntary_mandated)
+FROM bigquery-public-data.fda_food.food_enforcement
+WHERE voluntary_mandated='FDA Mandated'
+GROUP BY voluntary_mandated, recalling_firm
+ORDER BY 3 DESC;
+-- Interestingly 396 cases out of total numbers were mandated by FDA for recalling the products.View shows firms by lists. And ~70% cases (277 cases) were related to 2 companies Sunset Natural Products and Iowa Select Herbs LLC.
+
+WITH
+  df AS (
+  SELECT
+    state, city,
+    COUNT(classification) n_case
+  FROM
+    bigquery-public-data.fda_food.food_enforcement
+  GROUP BY
+    state, city
+  ORDER BY
+    n_case DESC)
+SELECT
+  *,
+  ROW_NUMBER() OVER () AS rnk
+FROM df
+LIMIT 10;
+-- Top 10 states that have the highest numbers of recall cases over the 10 years.
+
+SELECT
+  city,
+  state,
+  COUNT(classification) n_case
+FROM
+  bigquery-public-data.fda_food.food_enforcement
+GROUP BY
+  city,
+  state
+ORDER BY
+  3 DESC; 
+-- View by number of recall cases grouped BY cities. Top cities are Milwaukee,WI (635 cases), Chicago, IL (614 cases),  Troy, MI (361 cases) and so on.
+
+
+
+
+-- "TOP 5 COMPANY WITH HIGH RECALL CASES" --
+
+
+
+
+SELECT
+  COUNT(classification) AS number_cases,
+  recalling_firm
+FROM
+  bigquery-public-data.fda_food.food_enforcement
+GROUP BY
+  recalling_firm
+ORDER BY
+  1 DESC
+LIMIT 
+  10; 
+-- Top 5 companies are Garden-Fresh Foods Inc (632 cases),Newly Weds Foods Inc (438 cases), Good Herbs Inc (353 cases), C & S Wholesale Grocers Inc (330 cases), Whole Foods Market (313 cases)
+
+SELECT
+  recalling_firm,
+  COUNT(classification) AS number_cases,
+  country,
+  status
+FROM
+  bigquery-public-data.fda_food.food_enforcement
+WHERE
+  recalling_firm LIKE "%Garden-Fresh Foods, Inc.%"
+  OR recalling_firm LIKE "%Newly Weds Foods Inc%"
+  OR recalling_firm LIKE "%Good Herbs, Inc.%"
+GROUP BY
+  recalling_firm,
+  country,
+  status
+ORDER BY
+  2 DESC; 
+-- Looking from status of recall cases of TOP 5 companies, majority of cases were terminated. However, for Newly Weds Foods Inc there are 24 cases ongoing. 
+
+SELECT
+  df.recalling_firm,
+  COUNT(df.classification) AS number_cases,
+  df.country,
+  y.year
+FROM
+  bigquery-public-data.fda_food.food_enforcement df
+JOIN (
+  SELECT
+    report_date,
+    recall_number,
+    EXTRACT( YEAR
+    FROM
+      report_date) AS year,
+    EXTRACT( MONTH
+    FROM
+      report_date) AS month
+  FROM
+    bigquery-public-data.fda_food.food_enforcement ) AS y
+ON
+  y.recall_number = df.recall_number
+WHERE
+  recalling_firm LIKE "%Garden-Fresh Foods, Inc.%"
+  OR recalling_firm LIKE "%Newly Weds Foods Inc%"
+  OR recalling_firm LIKE "%Good Herbs, Inc.%"
+  OR recalling_firm LIKE "%C & S Wholesale Grocers Inc%"
+  OR recalling_firm LIKE "%Whole Foods Market%"
+GROUP BY
+  df.recalling_firm,
+  df.country,
+  y.year
+ORDER BY
+  1, 4 ASC; 
+-- Interestingly, top 4 firms' majority cases were happened in one of the year within the period range. All those cases come from one or few products or wide range of them? If its coming from wide range of different products, could it be associated with the firm's quality management? And for Whole Foods, turns out its other branches with different under a bit different names also have some recall cases and need to dig in if those numbers need to be aggregated for data analysis accuracy purpose.
+
+SELECT
+  COUNT(classification)
+FROM
+  bigquery-public-data.fda_food.food_enforcement
+WHERE
+  recalling_firm LIKE "%Whole Foods Market%"  
+-- Adding all other recall cases raised for Whole Foods, sum is 380 cases, which moves its ranking from TOP5 to TOP3.
